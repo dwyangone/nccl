@@ -211,6 +211,16 @@ const char* ibProviderName[] = {
 
 ncclResult_t ncclIbFinalizeDevices(void) {
   netRefCount--;
+  
+  // add remove Cache logic
+  if (netRefCount == 0) {
+    std::lock_guard<std::mutex> lock(ncclIbMutex);
+    //reset flag
+    ncclNIbDevs = -1;  
+    //logging result
+    INFO(NCCL_INIT|NCCL_NET, "NET/IB : All communicators closed. Cleared ncclNIbDevs cache in init.cc.");
+  }
+  
   return ncclSuccess;
 }
 
