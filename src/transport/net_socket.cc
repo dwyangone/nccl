@@ -718,6 +718,13 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
 
 ncclResult_t ncclNetSocketFinalize(void* ctx) {
   netRefCount--;
+  //reomve the cache for NIC if netRefCount == 0
+  if (netRefCount == 0) {
+    std::lock_guard<std::mutex> lock(ncclNetSocketMutex);
+    ncclNetIfs = -1; 
+    // for logging result
+    INFO(NCCL_INIT|NCCL_NET, "NET/Socket : Cache cleared forcefully. Ready for rescan.");
+  }
   return ncclSuccess;
 }
 
