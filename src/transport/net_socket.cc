@@ -718,6 +718,9 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
 
 ncclResult_t ncclNetSocketFinalize(void* ctx) {
   netRefCount--;
+  // 強制印出目前的計數，這是在 Failover 時最重要的除錯資訊
+  INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG at net_socket.cc: netRefCount decreased to %d", netRefCount);
+
   //reomve the cache for NIC if netRefCount == 0
   if (netRefCount == 0) {
     std::lock_guard<std::mutex> lock(ncclNetSocketMutex);

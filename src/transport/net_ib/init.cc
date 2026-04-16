@@ -211,7 +211,8 @@ const char* ibProviderName[] = {
 
 ncclResult_t ncclIbFinalizeDevices(void) {
   netRefCount--;
-  
+  // 強制印出目前的計數，這是在 Failover 時最重要的除錯資訊
+  INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG at init.cc: netRefCount decreased to %d", netRefCount);
   // add remove Cache logic
   if (netRefCount == 0) {
     std::lock_guard<std::mutex> lock(ncclIbMutex);
@@ -225,6 +226,21 @@ ncclResult_t ncclIbFinalizeDevices(void) {
 }
 
 ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  
+  // 檢查點 1：確認函數確實被 Phase 2 重新觸發
+    INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG: Entered ncclIbInit!");
+
+    const char* userIfs = getenv("NCCL_IB_HCA");
+    
+    // 檢查點 2：確認 C++ 端讀取到的環境變數是不是 Phase 2 指定的新網卡
+    if (userIfs != NULL) {
+        INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG: Current NCCL_IB_HCA in C++ memory is -> %s", userIfs);
+    } else {
+        INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG: NCCL_IB_HCA is NULL");
+    }
+
+    // ... 原本的初始化邏輯
+  
   ncclResult_t ret = ncclSuccess;
   if (netRefCount++) return ret;
   ncclProfilerFunction = profFunction;
