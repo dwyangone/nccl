@@ -215,6 +215,7 @@ ncclResult_t ncclIbFinalizeDevices(void) {
   INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG at init.cc: netRefCount decreased to %d", netRefCount);
   // add remove Cache logic
   if (netRefCount <= 1) {
+    netRefCount--;
     std::lock_guard<std::mutex> lock(ncclIbMutex);
     //reset flag
     ncclNIbDevs = -1;  
