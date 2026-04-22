@@ -242,7 +242,12 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
     // ... 原本的初始化邏輯
   
   ncclResult_t ret = ncclSuccess;
-  if (netRefCount++) return ret;
+
+  // 【關鍵追蹤代碼】：攔截計數器增加的瞬間，並印出 Log
+  int oldCount = netRefCount++;
+  INFO(NCCL_INIT|NCCL_NET, "HOT SWAP TRACE: net_ib netRefCount INCREASING from %d to %d", oldCount, oldCount + 1);
+  if (oldCount > 0) return ret;
+  //if (netRefCount++) return ret;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
