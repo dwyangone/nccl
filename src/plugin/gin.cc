@@ -214,6 +214,13 @@ static void initPluginLibsOnceFunc() {
 
 static ncclResult_t ncclGinPluginFinalize(struct ncclComm* comm, int pluginIndex) {
   if (ginPluginLibs[pluginIndex].ncclGin && ginPluginLibs[pluginIndex].ncclGinPluginState == ncclGinPluginStateEnabled) NCCLCHECK(ginPluginLibs[pluginIndex].ncclGin->finalize(comm->ginContext));
+  
+  // 2. 【修復 Bug】補上 RMA 的清理
+  // RMA 也使用了同樣的 comm->ginContext，因此我們對它呼叫 finalize
+  if (ginPluginLibs[pluginIndex].ncclRma && ginPluginLibs[pluginIndex].ncclRmaPluginState == ncclGinPluginStateEnabled) {
+    NCCLCHECK(ginPluginLibs[pluginIndex].ncclRma->finalize(comm->ginContext));
+  }
+  
   ginPluginLibs[pluginIndex].ncclGinPluginRefCount--;
   if (pluginIndex < (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
     NCCLCHECK(ncclGinPluginUnload(&ginPluginLibs[pluginIndex]));
