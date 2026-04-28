@@ -229,9 +229,9 @@ static ncclResult_t ncclGinPluginFinalize(struct ncclComm* comm, int pluginIndex
     INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the first if block");  
     if (pluginIndex >= (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
           const char* hwName = ginPluginLibs[pluginIndex].ncclGin->name;
-          INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the second if block, hwName=%s", hwName);  
+          INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG: Found hwName='%s', func_ptr=%p", hwName, (void*)ncclIbFinalizeDevices); 
           if (strcmp(hwName, "IB") == 0 || strcmp(hwName, "NET_IB") == 0) {
-              INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the third if block, ncclIbFinalizeDevices=%s", ncclIbFinalizeDevices); 
+              
               if (ncclIbFinalizeDevices) { // 弱符號安全檢查
                   NCCLCHECK(ncclIbFinalizeDevices());
                   INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: Executed weak IB finalize for RMA bypass.");
