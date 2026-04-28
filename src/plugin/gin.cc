@@ -230,7 +230,7 @@ static ncclResult_t ncclGinPluginFinalize(struct ncclComm* comm, int pluginIndex
     if (pluginIndex >= (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
           const char* hwName = ginPluginLibs[pluginIndex].ncclGin->name;
           INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG: Found hwName='%s', func_ptr=%p", hwName, (void*)ncclIbFinalizeDevices); 
-          if (strcmp(hwName, "IB") == 0 || strcmp(hwName, "NET_IB") == 0) {
+          if (strcmp(hwName, "IB") == 0 || strcmp(hwName, "NET_IB") == 0 || strcmp(hwName, "GIN_IB_GDAKI") == 0) {
               
               if (ncclIbFinalizeDevices) { // 弱符號安全檢查
                   NCCLCHECK(ncclIbFinalizeDevices());
