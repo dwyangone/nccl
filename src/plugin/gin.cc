@@ -222,13 +222,16 @@ __attribute__((weak)) extern ncclResult_t ncclIbFinalizeDevices(void);
 
 static ncclResult_t ncclGinPluginFinalize(struct ncclComm* comm, int pluginIndex) {
   if (ginPluginLibs[pluginIndex].ncclGin && ginPluginLibs[pluginIndex].ncclGinPluginState == ncclGinPluginStateEnabled) NCCLCHECK(ginPluginLibs[pluginIndex].ncclGin->finalize(comm->ginContext));
-
+  
+  INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize before RMA bypass.");
   // RMA 通用且安全的計數器扣減
   if (ginPluginLibs[pluginIndex].ncclRma && ginPluginLibs[pluginIndex].ncclRmaPluginState == ncclGinPluginStateEnabled) {
-      if (pluginIndex >= (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
+    INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the first if block");  
+    if (pluginIndex >= (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
           const char* hwName = ginPluginLibs[pluginIndex].ncclGin->name;
-          
+          INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the second if block, hwName=%s", hwName);  
           if (strcmp(hwName, "IB") == 0 || strcmp(hwName, "NET_IB") == 0) {
+              INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: in ncclGinPluginFinalize, the third if block, ncclIbFinalizeDevices=%s", ncclIbFinalizeDevices); 
               if (ncclIbFinalizeDevices) { // 弱符號安全檢查
                   NCCLCHECK(ncclIbFinalizeDevices());
                   INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: Executed weak IB finalize for RMA bypass.");
