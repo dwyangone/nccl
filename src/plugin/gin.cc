@@ -212,8 +212,37 @@ static void initPluginLibsOnceFunc() {
   pluginCount = pluginCounter;
 }
 
+// =========================================================================
+// 【客製化 Patch】：宣告底層硬體卸載函數 (弱符號)
+// 解決 RMA Plugin 漏扣 Reference 導致的 Scale-up Deadlock 問題
+// 找不到實體時將設為 nullptr，確保無硬體依賴時也能安全編譯
+// =========================================================================
+__attribute__((weak)) extern ncclResult_t ncclIbFinalizeDevices(void);
+//__attribute__((weak)) extern ncclResult_t ncclNetSocketFinalizeDevices(void);
+
 static ncclResult_t ncclGinPluginFinalize(struct ncclComm* comm, int pluginIndex) {
   if (ginPluginLibs[pluginIndex].ncclGin && ginPluginLibs[pluginIndex].ncclGinPluginState == ncclGinPluginStateEnabled) NCCLCHECK(ginPluginLibs[pluginIndex].ncclGin->finalize(comm->ginContext));
+
+  // RMA 通用且安全的計數器扣減
+  if (ginPluginLibs[pluginIndex].ncclRma && ginPluginLibs[pluginIndex].ncclRmaPluginState == ncclGinPluginStateEnabled) {
+      if (pluginIndex >= (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
+          const char* hwName = ginPluginLibs[pluginIndex].ncclGin->name;
+          
+          if (strcmp(hwName, "IB") == 0 || strcmp(hwName, "NET_IB") == 0) {
+              if (ncclIbFinalizeDevices) { // 弱符號安全檢查
+                  NCCLCHECK(ncclIbFinalizeDevices());
+                  INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: Executed weak IB finalize for RMA bypass.");
+              }
+          } 
+          //else if (strcmp(hwName, "Socket") == 0) {
+          //    if (ncclSocketFinalizeDevices) {
+          //        NCCLCHECK(ncclSocketFinalizeDevices());
+          //        INFO(NCCL_INIT|NCCL_NET, "HOT SWAP: Executed weak Socket finalize for RMA bypass.");
+          //    }
+          //}
+      }
+  }  
+  
   ginPluginLibs[pluginIndex].ncclGinPluginRefCount--;
   if (pluginIndex < (pluginCount - NCCL_GIN_NUM_INTERNAL_PLUGINS)) {
     NCCLCHECK(ncclGinPluginUnload(&ginPluginLibs[pluginIndex]));
