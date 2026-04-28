@@ -214,8 +214,8 @@ ncclResult_t ncclIbFinalizeDevices(void) {
   // 強制印出目前的計數，這是在 Failover 時最重要的除錯資訊
   INFO(NCCL_INIT|NCCL_NET, "HOT SWAP DEBUG at init.cc: netRefCount decreased to %d", netRefCount);
   // add remove Cache logic
-  if (netRefCount <= 1) {
-    netRefCount--;
+  if (netRefCount == 0) {
+    //netRefCount--;
     std::lock_guard<std::mutex> lock(ncclIbMutex);
     //reset flag
     ncclNIbDevs = -1;  
