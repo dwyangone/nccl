@@ -20,6 +20,13 @@ extern int64_t ncclParamIbTimeout();
 
 #define MSEC_TO_NSEC 1000000ULL
 
+/* ========================================================================= */
+/* --- [NCCL-FT: 引入內部觸發器] --- */
+extern void nccl_ft_trigger_fault(struct ncclComm* comm, int dev_idx);
+extern void nccl_ft_trigger_recovery(struct ncclComm* comm, int dev_idx);
+/* ========================================================================= */
+
+
 // Checks if the error indicated in the given work completion is fatal or not.
 static ncclResult_t ncclIbResiliencyCheckErrorNotFatal(struct ncclIbResiliency* resCtx, struct ibv_wc *wc, int devIndex) {
   int nFailedDevices = 0;
@@ -325,6 +332,16 @@ static ncclResult_t ncclIbResiliencyHandleDeviceFailure(struct ncclIbResiliency*
     WARN("NET/IB: %s: Device %d marked as failed. Initiating recovery? %s (%s comm=%p, outstandingRecovery=%d)", __func__, devIndex, resCtx->recoveryEnabled ? "Yes" : "No", resCtx->baseComm->isSend ? "send" : "recv", resCtx->baseComm, resCtx->outstandingRecovery);
     resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateError, std::memory_order_release);
     NCCLCHECK(ncclIbResiliencyReplaceQps(resCtx, devIndex));
+
+    /* ===================================================================== */
+    /* --- [NCCL-FT: 主動觸發 PyTorch 警報] --- */
+    struct ncclComm* top_comm = resCtx->baseComm->comm; 
+    if (top_comm != NULL) {
+        // 呼叫全域觸發中樞，通知 PyTorch 該網卡已確認損毀並降級
+        nccl_ft_trigger_fault(top_comm, devIndex);
+    }
+    /* ===================================================================== */
+
     if (resCtx->recoveryEnabled) {
       resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateRecoveryInProgress, std::memory_order_release);
       res = ncclIbPortRecoveryHandleFailure(resCtx, devIndex);
@@ -1000,6 +1017,14 @@ ncclResult_t ncclIbResiliencyProgress(struct ncclIbResiliency* resCtx) {
         INFO(NCCL_NET, "NET/IB: %s: Device %d has been recovered for resiliency context (%s comm=%p, outstandingRecovery=%d)", __func__, devIndex, resCtx->baseComm->isSend ? "send" : "recv", resCtx->baseComm, resCtx->outstandingRecovery);
         ncclIbResiliencyActiveQpsRestore(resCtx, devIndex);
         resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateOk, std::memory_order_release);
+
+        /* ===================================================================== */
+        /* --- [NCCL-FT: 主動觸發 PyTorch 復原警報] --- */
+        struct ncclComm* top_comm = resCtx->baseComm->comm; 
+        if (top_comm != NULL) {
+            nccl_ft_trigger_recovery(top_comm, devIndex);
+        }
+        /* ===================================================================== */
       }
       if (devState == ncclIbResiliencyDevStateRecoveryFailed) {
         resCtx->outstandingRecovery--;

@@ -835,6 +835,17 @@ ncclResult_t pncclParamGetAllParameterKeys(const char*** table, int* tableLen);
 void ncclParamDumpAll(void);
 void pncclParamDumpAll(void);
 
+
+/* --- [NCCL-FT: 中斷驅動 API] --- */
+typedef void (*ncclFaultCallback_t)(int dev_idx);
+typedef void (*ncclRecoveryCallback_t)(int dev_idx);
+
+NCCL_API(ncclResult_t, ncclCommRegisterFaultCallback, ncclComm_t comm, ncclFaultCallback_t cb);
+NCCL_API(ncclResult_t, ncclCommRegisterRecoveryCallback, ncclComm_t comm, ncclRecoveryCallback_t cb);
+/* ------------------------------ */
+
+
+
 #ifdef __cplusplus
 } // end extern "C"
 #endif
