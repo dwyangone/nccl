@@ -22,8 +22,8 @@ extern int64_t ncclParamIbTimeout();
 
 /* ========================================================================= */
 /* --- [NCCL-FT: 引入內部觸發器] --- */
-extern void nccl_ft_trigger_fault(struct ncclComm* comm, int dev_idx);
-extern void nccl_ft_trigger_recovery(struct ncclComm* comm, int dev_idx);
+extern void nccl_ft_trigger_fault(int dev_idx);
+extern void nccl_ft_trigger_recovery(int dev_idx);
 /* ========================================================================= */
 
 
@@ -335,11 +335,7 @@ static ncclResult_t ncclIbResiliencyHandleDeviceFailure(struct ncclIbResiliency*
 
     /* ===================================================================== */
     /* --- [NCCL-FT: 主動觸發 PyTorch 警報] --- */
-    struct ncclComm* top_comm = resCtx->baseComm->comm; 
-    if (top_comm != NULL) {
-        // 呼叫全域觸發中樞，通知 PyTorch 該網卡已確認損毀並降級
-        nccl_ft_trigger_fault(top_comm, devIndex);
-    }
+    nccl_ft_trigger_fault(devIndex);
     /* ===================================================================== */
 
     if (resCtx->recoveryEnabled) {
@@ -1020,10 +1016,7 @@ ncclResult_t ncclIbResiliencyProgress(struct ncclIbResiliency* resCtx) {
 
         /* ===================================================================== */
         /* --- [NCCL-FT: 主動觸發 PyTorch 復原警報] --- */
-        struct ncclComm* top_comm = resCtx->baseComm->comm; 
-        if (top_comm != NULL) {
-            nccl_ft_trigger_recovery(top_comm, devIndex);
-        }
+        nccl_ft_trigger_recovery(devIndex);
         /* ===================================================================== */
       }
       if (devState == ncclIbResiliencyDevStateRecoveryFailed) {

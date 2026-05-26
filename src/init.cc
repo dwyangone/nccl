@@ -39,9 +39,11 @@
 #include "env.h"
 #include "rma/rma.h"
 
-/*add for port failover API*/
+/* --- [NCCL-FT: 前置宣告區 (實作於檔案末尾)] --- */
 #include <unordered_map>
 #include <mutex>
+static void nccl_ft_cleanup_callbacks(ncclComm_t comm);
+/* ---------------------------------------------- */
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -3327,20 +3329,40 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
 
 
 /* ========================================================================= */
-/* [NCCL-FT: 零侵入式 Callback 註冊表 (Global Registry)]                     */
+/* [NCCL-FT: 零侵入式 Callback 註冊表 (Global Registry) 完整實作]            */
 /* ========================================================================= */
 
-// 宣告回呼函式的簽章
 typedef void (*ncclFaultCallback_t)(int dev_idx);
 typedef void (*ncclRecoveryCallback_t)(int dev_idx);
 
-// 建立全域的 Hash Map 與 Mutex
-// 宣告在 static 匿名空間，避免污染其他編譯單元
 static std::unordered_map<ncclComm_t, ncclFaultCallback_t> g_fault_callbacks;
 static std::unordered_map<ncclComm_t, ncclRecoveryCallback_t> g_recovery_callbacks;
 static std::mutex g_cb_mutex;
 
-/* --- 給 PyTorch 呼叫的公開 API --- */
+/* --- 清理函數 (被 ncclCommDestroy 呼叫) --- */
+static void nccl_ft_cleanup_callbacks(ncclComm_t comm) {
+    if (comm == NULL) return;
+    std::lock_guard<std::mutex> lock(g_cb_mutex);
+    g_fault_callbacks.erase(comm);
+    g_recovery_callbacks.erase(comm);
+}
+
+/* --- 給 NCCL 底層呼叫的全域觸發函數 --- */
+void nccl_ft_trigger_fault(int dev_idx) {
+    std::lock_guard<std::mutex> lock(g_cb_mutex);
+    for (auto& pair : g_fault_callbacks) {
+        if (pair.second) pair.second(dev_idx);
+    }
+}
+
+void nccl_ft_trigger_recovery(int dev_idx) {
+    std::lock_guard<std::mutex> lock(g_cb_mutex);
+    for (auto& pair : g_recovery_callbacks) {
+        if (pair.second) pair.second(dev_idx);
+    }
+}
+
+/* --- 公開給 PyTorch 的 API --- */
 NCCL_API(ncclResult_t, ncclCommRegisterFaultCallback, ncclComm_t comm, ncclFaultCallback_t cb);
 ncclResult_t ncclCommRegisterFaultCallback(ncclComm_t comm, ncclFaultCallback_t cb) {
     if (comm == NULL || cb == NULL) return ncclInvalidArgument;
@@ -3356,31 +3378,4 @@ ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallb
     g_recovery_callbacks[comm] = cb;
     return ncclSuccess;
 }
-
-/* --- 給 NCCL 底層(p2p_resiliency.cc) 呼叫的內部觸發函數 (Internal Trigger) --- */
-void nccl_ft_trigger_fault(ncclComm_t comm, int dev_idx) {
-    if (comm == NULL) return;
-    std::lock_guard<std::mutex> lock(g_cb_mutex);
-    if (g_fault_callbacks.count(comm)) {
-        g_fault_callbacks[comm](dev_idx); // 執行 PyTorch 註冊的 Lambda
-    }
-}
-
-void nccl_ft_trigger_recovery(ncclComm_t comm, int dev_idx) {
-    if (comm == NULL) return;
-    std::lock_guard<std::mutex> lock(g_cb_mutex);
-    if (g_recovery_callbacks.count(comm)) {
-        g_recovery_callbacks[comm](dev_idx);
-    }
-}
-
-/* --- 清理函數 (防止記憶體洩漏) --- */
-static void nccl_ft_cleanup_callbacks(ncclComm_t comm) {
-    if (comm == NULL) return;
-    std::lock_guard<std::mutex> lock(g_cb_mutex);
-    g_fault_callbacks.erase(comm);
-    g_recovery_callbacks.erase(comm);
-}
-
-
 /* ========================================================================= */
