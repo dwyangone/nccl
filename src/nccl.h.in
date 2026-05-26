@@ -840,8 +840,9 @@ void pncclParamDumpAll(void);
 typedef void (*ncclFaultCallback_t)(int dev_idx);
 typedef void (*ncclRecoveryCallback_t)(int dev_idx);
 
-NCCL_API(ncclResult_t, ncclCommRegisterFaultCallback, ncclComm_t comm, ncclFaultCallback_t cb);
-NCCL_API(ncclResult_t, ncclCommRegisterRecoveryCallback, ncclComm_t comm, ncclRecoveryCallback_t cb);
+/* 在標頭檔中，只需使用標準的函數宣告 */
+ncclResult_t ncclCommRegisterFaultCallback(ncclComm_t comm, ncclFaultCallback_t cb);
+ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallback_t cb);
 /* ------------------------------ */
 
 
