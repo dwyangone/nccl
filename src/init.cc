@@ -3326,7 +3326,23 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
 }
 
 
+/* --- [NCCL-FT: 原生切換開關] --- */
+#include <stdlib.h>
 
+int nccl_ft_is_disabled() {
+    static int cached_status = -1;
+    if (cached_status == -1) {
+        const char* env = getenv("NCCL_FT_DISABLE");
+        // 如果環境變數設為 "1"，代表停用 NCCL-FT 修改，切換回原生 NCCL
+        if (env && strcmp(env, "1") == 0) {
+            cached_status = 1;
+        } else {
+            cached_status = 0;
+        }
+    }
+    return cached_status;
+}
+/* --------------------------------- */
 
 /* ========================================================================= */
 /* [NCCL-FT: 零侵入式 Callback 註冊表 (Global Registry) 完整實作]            */
@@ -3377,5 +3393,16 @@ ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallb
     std::lock_guard<std::mutex> lock(g_cb_mutex);
     g_recovery_callbacks[comm] = cb;
     return ncclSuccess;
+}
+
+
+static uint64_t g_nccl_ft_banned_nics_mask = 0;
+NCCL_API(ncclResult_t, ncclCommBanNic, int dev_idx);
+ncclResult_t ncclCommBanNic(int dev_idx) {
+    g_nccl_ft_banned_nics_mask |= (1ULL << dev_idx);
+    return ncclSuccess;
+}
+int nccl_ft_is_nic_banned(int dev_idx) {
+    return (g_nccl_ft_banned_nics_mask & (1ULL << dev_idx)) ? 1 : 0;
 }
 /* ========================================================================= */

@@ -24,11 +24,16 @@ extern int64_t ncclParamIbTimeout();
 /* --- [NCCL-FT: 引入內部觸發器] --- */
 extern void nccl_ft_trigger_fault(int dev_idx);
 extern void nccl_ft_trigger_recovery(int dev_idx);
+extern int nccl_ft_is_disabled(); // 宣告外部函數
 /* ========================================================================= */
 
 
 // Checks if the error indicated in the given work completion is fatal or not.
 static ncclResult_t ncclIbResiliencyCheckErrorNotFatal(struct ncclIbResiliency* resCtx, struct ibv_wc *wc, int devIndex) {
+  //modify for experiment
+  if (nccl_ft_is_disabled() == 0) 
+    return ncclRemoteError;
+  
   int nFailedDevices = 0;
   bool fatalCompletionStatus = true;
   const char* failureReason = NULL;
@@ -326,6 +331,19 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorSender(struct ncclIbRes
 
 // Mark the device as failed and replace its QPs.
 static ncclResult_t ncclIbResiliencyHandleDeviceFailure(struct ncclIbResiliency* resCtx, int devIndex) {
+  //modify for experiment
+  if (nccl_ft_is_disabled() == 0) {
+    // 1. 標記狀態為 Error
+    resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateError, std::memory_order_release);
+
+    // 2. 觸發 PyTorch 側車執行緒 (極速寫入原子變數)
+    nccl_ft_trigger_fault(devIndex);
+
+    // 3. 截斷原生的熱抽換機制，直接回傳系統錯誤！
+    // NCCLCHECK(ncclIbResiliencyReplaceQps(resCtx, devIndex)); // <- 刪除這行
+    return ncclSystemError;
+  }
+  
   ncclResult_t res = ncclSuccess;
   enum ncclIbResiliencyDevState devState = resCtx->devs[devIndex].state.load(std::memory_order_acquire);
   if (devState == ncclIbResiliencyDevStateOk) {

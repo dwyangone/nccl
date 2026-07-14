@@ -1424,8 +1424,20 @@ out:
   return res;
 }
 
+extern int nccl_ft_is_disabled(); // 宣告外部函數
+extern int nccl_ft_is_nic_banned(int dev_idx);
+
 static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, struct ncclTopoNetInfo* netInfo, int virtualNics) {
   for (int n = startIndex; n < endIndex; n++) {
+    /* ========================================================= */
+    /* --- [NCCL-FT: 檢查開關] --- */
+    if (!nccl_ft_is_nic_banned(n) && nccl_ft_is_disabled() == 0) {
+        // 只有在黑名單啟用且 FT 沒被停用時，才執行物理遮蔽
+        INFO(NCCL_INIT, "NCCL-FT: 物理遮蔽故障網卡 %d", n);
+        continue; 
+    }
+    /* ========================================================= */
+
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
     struct ncclXmlNode* netNode = NULL;
