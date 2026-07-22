@@ -843,6 +843,7 @@ typedef void (*ncclRecoveryCallback_t)(int dev_idx);
 /* 在標頭檔中，只需使用標準的函數宣告 */
 ncclResult_t ncclCommRegisterFaultCallback(ncclComm_t comm, ncclFaultCallback_t cb);
 ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallback_t cb);
+ncclResult_t ncclCommBanNic(int dev_idx);
 /* ------------------------------ */
 
 
