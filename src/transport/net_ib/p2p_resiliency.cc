@@ -343,6 +343,7 @@ static ncclResult_t ncclIbResiliencyHandleDeviceFailure(struct ncclIbResiliency*
     // NCCLCHECK(ncclIbResiliencyReplaceQps(resCtx, devIndex)); // <- 刪除這行
     return ncclSystemError;
   }
+
   
   ncclResult_t res = ncclSuccess;
   enum ncclIbResiliencyDevState devState = resCtx->devs[devIndex].state.load(std::memory_order_acquire);
@@ -507,6 +508,16 @@ static ncclResult_t ncclIbResiliencyProbeHandleCompletionEvent(struct ncclIbResi
     failedRequest->state = ncclIbResiliencyRequestStateProbeCompleted;
     // Further processing will be done in the main progress function.
     return ncclSuccess;
+  }
+
+  // 在 NCCLCHECK(ncclIbResiliencyCheckErrorNotFatal(...)) 之前加
+  if (nccl_ft_is_disabled() == 0) {
+      sendResCtx->base.devs[devIndex].state.store(
+          ncclIbResiliencyDevStateError, std::memory_order_release);
+      nccl_ft_trigger_fault(devIndex);
+      failedRequest->state = ncclIbResiliencyRequestStatePending;
+      failedRequest->failedAttempts++;
+      return ncclSuccess;
   }
 
   NCCLCHECK(ncclIbResiliencyCheckErrorNotFatal(&sendResCtx->base, probeWc, devIndex));
