@@ -965,6 +965,16 @@ ncclResult_t ncclIbResiliencyRequestIsComplete(struct ncclIbRequest *request, bo
 
 ncclResult_t ncclIbResiliencyHandleCompletionError(struct ncclIbResiliency* resCtx, struct ibv_wc* wc, int devIndex) {
   INFO(NCCL_NET, "NET/IB: %s: Got completion with error (devIndex=%d, wc->status=(%s)%d, wc->opcode=(%s)%d, wc->wr_id=%ld, wc->qp_num=%u, wc->byte_len=%d)", __func__, devIndex, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->wr_id, wc->qp_num, wc->byte_len);
+
+  if (nccl_ft_is_disabled() == 0) {
+      // FT enabled: 直接觸發 callback 通知 PyTorch，然後讓 NCCL 回傳錯誤
+      resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateError,
+                                        std::memory_order_release);
+      nccl_ft_trigger_fault(devIndex);
+      return ncclRemoteError;
+  }
+  // 原本的邏輯（FT disabled）
+
   NCCLCHECK(ncclIbResiliencyCheckErrorNotFatal(resCtx, wc, devIndex));
 
   // Before handling the request that got an error, first the device is
