@@ -1431,11 +1431,17 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
   for (int n = startIndex; n < endIndex; n++) {
     /* ========================================================= */
     /* --- [NCCL-FT: 檢查開關] --- */
-    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
-        WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
-        continue;
-    }
+    //if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
+    //    WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
+    //    continue;
+    //}
     /* ========================================================= */
+    /* [NCCL-FT: BAN 判斷已移除]
+     * g_nccl_ft_banned_nics_mask 是 process-global static，在同一進程的第二次
+     * ncclCommInitRankConfig 時會看到前一次 training 殘留的 ban 狀態，導致
+     * "Could not find any local path from gpu N to net"。
+     * Shadow Ping-Pong 透過 ncclCommSplit + NCCL_SPLIT_NOCOLOR 排除 faulty rank，
+     * 不依賴 topo-level ban。此處 ban 邏輯已移除。 */
 
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));

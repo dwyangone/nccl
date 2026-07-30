@@ -332,16 +332,18 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorSender(struct ncclIbRes
 // Mark the device as failed and replace its QPs.
 static ncclResult_t ncclIbResiliencyHandleDeviceFailure(struct ncclIbResiliency* resCtx, int devIndex) {
   //modify for experiment
+  /* [NCCL-FT] When FT is enabled, PyTorch owns the failover path.
+   * Mark the device as failed and notify PyTorch via the fault callback.
+   * Do NOT call ncclIbResiliencyReplaceQps: that would silently reroute
+   * traffic onto other NICs, hiding the fault from PyTorch and defeating
+   * the Shadow Ping-Pong mechanism.
+   * Return ncclRemoteError (not ncclSystemError) so the caller propagates
+   * a non-fatal remote error instead of crashing with NCCLCHECK. */
   if (nccl_ft_is_disabled() == 0) {
-    // 1. 標記狀態為 Error
-    resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateError, std::memory_order_release);
-
-    // 2. 觸發 PyTorch 側車執行緒 (極速寫入原子變數)
+    resCtx->devs[devIndex].state.store(ncclIbResiliencyDevStateError,
+                                       std::memory_order_release);
     nccl_ft_trigger_fault(devIndex);
-
-    // 3. 截斷原生的熱抽換機制，直接回傳系統錯誤！
-    // NCCLCHECK(ncclIbResiliencyReplaceQps(resCtx, devIndex)); // <- 刪除這行
-    return ncclSystemError;
+    return ncclRemoteError;
   }
 
   
@@ -511,13 +513,17 @@ static ncclResult_t ncclIbResiliencyProbeHandleCompletionEvent(struct ncclIbResi
   }
 
   // 在 NCCLCHECK(ncclIbResiliencyCheckErrorNotFatal(...)) 之前加
+  // 修改後的 ncclIbResiliencyProbeHandleCompletionEvent FT 路徑 (Line 513–521)
+  /* [NCCL-FT] When FT is enabled, a failed probe means the fault was not
+   * transient. Notify PyTorch and let the error propagate upward so the
+   * collective op fails and the Watchdog triggers the recovery path.
+   * Do NOT return ncclSuccess here — that would mask the error and keep
+   * the probe loop spinning until MaxAttempts is reached. */
   if (nccl_ft_is_disabled() == 0) {
-      sendResCtx->base.devs[devIndex].state.store(
-          ncclIbResiliencyDevStateError, std::memory_order_release);
-      nccl_ft_trigger_fault(devIndex);
-      failedRequest->state = ncclIbResiliencyRequestStatePending;
-      failedRequest->failedAttempts++;
-      return ncclSuccess;
+    sendResCtx->base.devs[devIndex].state.store(
+        ncclIbResiliencyDevStateError, std::memory_order_release);
+    nccl_ft_trigger_fault(devIndex);
+    return ncclRemoteError;
   }
 
   NCCLCHECK(ncclIbResiliencyCheckErrorNotFatal(&sendResCtx->base, probeWc, devIndex));
