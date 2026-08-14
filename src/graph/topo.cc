@@ -1429,15 +1429,6 @@ extern int nccl_ft_is_nic_banned(int dev_idx);
 
 static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, struct ncclTopoNetInfo* netInfo, int virtualNics) {
   for (int n = startIndex; n < endIndex; n++) {
-    /* ========================================================= */
-    /* --- [NCCL-FT: 檢查開關] --- */
-    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
-        WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
-        continue;
-    }
-    /* ========================================================= */
-
-
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
     struct ncclXmlNode* netNode = NULL;
@@ -1451,6 +1442,19 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     }
 
     NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
+
+    /* ========================================================= */
+    /* --- [NCCL-FT: 檢查開關] --- */
+    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
+        WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
+        // 把這個 XML 節點的名稱從 "net" 改成 "banned_net"
+        // 這樣稍後 ncclTopoGetSystemFromXml 尋找 "net" 時，就會徹底無視它！
+        strcpy(netNode->name, "banned_net");
+        
+        // 改完名後，安全地跳過後續屬性設定
+        continue;
+    }
+    /* ========================================================= */
 
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
