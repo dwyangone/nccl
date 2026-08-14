@@ -1432,6 +1432,21 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
 
+    /* ========================================================= */
+    /* --- [NCCL-FT: 軟性物理遮蔽 (Soft-Ban)] --- */
+    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
+        WARN("NCCL-FT: 軟性物理遮蔽故障網卡 %d (將頻寬設為 0，阻斷路由)", n);
+        
+        // 🔥 核心修復：絕對不要改名，也不要 continue！
+        // 保留 XML 的實體結構以防 vNic 聚合與 UCX 驅動發生 Segmentation Fault。
+        // 透過將頻寬 (speed) 與連線數 (maxComms) 歸零，
+        // 讓 NCCL 路由演算法 (PathFinder) 在計算最短路徑時，自然拋棄這張網卡！
+        props.speed = 0;
+        props.maxComms = 0;
+        props.latency = 999999; // 加上極大延遲，確保絕對不會被 Graph 演算法選中
+    }
+    /* ========================================================= */
+
     struct ncclXmlNode* netNode = NULL;
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
@@ -1444,20 +1459,6 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
 
     NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
 
-    /* ========================================================= */
-    /* --- [NCCL-FT: 終極物理遮蔽 (XML 改名大法)] --- */
-    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
-        WARN("NCCL-FT: 物理遮蔽故障網卡 %d (將 XML 節點改名以徹底移除)", n);
-        
-        // 把這個 XML 節點的名稱從 "net" 改成 "banned_net"
-        // 這樣後續 NCCL 建立路由表時，會徹徹底底無視這張網卡！
-        // 同時也避免了 Zombie 節點沒有 dev 屬性導致的 dev=-1 空指標崩潰！
-        strcpy(netNode->name, "banned_net");
-        
-        continue; // 安全跳過後續屬性設定
-    }
-    /* ========================================================= */
-
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
 
@@ -1465,6 +1466,8 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     int dev;
     xmlGetAttrIntDefault(netNode, "dev", &dev, -1);
     if (dev != -1 && dev != n) INFO(NCCL_GRAPH, "TOPO/NET : Changing %s dev index from %d to %d", netInfo->name, dev, n);
+    
+    // 這裡會把我們上面修改的 0 頻寬與極大延遲，正式寫入 XML 節點中
     NCCLCHECK(xmlSetAttrInt(netNode, "dev", n));
     NCCLCHECK(xmlInitAttrInt(netNode, "latency", props.latency));
     NCCLCHECK(xmlInitAttrInt(netNode, "speed", props.speed));
@@ -1495,7 +1498,6 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
 
   return ncclSuccess;
 }
-
 // Calls to network plugin APIs should be protected. This function should be called inside a per-process lock.
 ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct ncclTopoNetInfo* net) {
   bool usePhysicalDevices = (dumpXmlFile || net->makeVDevice == NULL);
