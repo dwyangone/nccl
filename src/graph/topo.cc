@@ -1447,12 +1447,11 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     /* --- [NCCL-FT: 檢查開關] --- */
     if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
         WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
-        // 把這個 XML 節點的名稱從 "net" 改成 "banned_net"
-        // 這樣稍後 ncclTopoGetSystemFromXml 尋找 "net" 時，就會徹底無視它！
-        strcpy(netNode->name, "banned_net");
-        
-        // 改完名後，安全地跳過後續屬性設定
-        continue;
+        // 不改變 XML 樹結構，只將頻寬歸零！
+        // 這樣 NCCL 的陣列索引不變，
+        // 且路由演算法會因為頻寬為 0 而徹底放棄使用這張網卡。
+        props.speed = 0;
+        props.maxComms = 0;
     }
     /* ========================================================= */
 
