@@ -1432,18 +1432,6 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
 
-    /* ========================================================= */
-    /* --- [NCCL-FT: 檢查開關] --- */
-    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
-        WARN("NCCL-FT: 物理遮蔽故障網卡 %d", n);
-        // 不改變 XML 樹結構，只將頻寬歸零！
-        // 這樣 NCCL 的陣列索引不變，
-        // 且路由演算法會因為頻寬為 0 而徹底放棄使用這張網卡。
-        props.speed = 0;
-        props.maxComms = 0;
-    }
-    /* ========================================================= */
-
     struct ncclXmlNode* netNode = NULL;
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
@@ -1455,6 +1443,20 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     }
 
     NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
+
+    /* ========================================================= */
+    /* --- [NCCL-FT: 終極物理遮蔽 (XML 改名大法)] --- */
+    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
+        WARN("NCCL-FT: 物理遮蔽故障網卡 %d (將 XML 節點改名以徹底移除)", n);
+        
+        // 把這個 XML 節點的名稱從 "net" 改成 "banned_net"
+        // 這樣後續 NCCL 建立路由表時，會徹徹底底無視這張網卡！
+        // 同時也避免了 Zombie 節點沒有 dev 屬性導致的 dev=-1 空指標崩潰！
+        strcpy(netNode->name, "banned_net");
+        
+        continue; // 安全跳過後續屬性設定
+    }
+    /* ========================================================= */
 
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
