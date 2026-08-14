@@ -1431,17 +1431,6 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
-    struct ncclXmlNode* netNode = NULL;
-    struct ncclXmlNode* parent = NULL;
-    if (virtualNics) {
-      struct ncclXmlNode* net = NULL;
-      NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
-      // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
-      // Only run this if the net doesn't exist locally - this may alter the XML state
-      if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, netInfo->getProperties, &props.vProps, &parent));
-    }
-
-    NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
 
     /* ========================================================= */
     /* --- [NCCL-FT: 檢查開關] --- */
@@ -1454,6 +1443,18 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
         props.maxComms = 0;
     }
     /* ========================================================= */
+
+    struct ncclXmlNode* netNode = NULL;
+    struct ncclXmlNode* parent = NULL;
+    if (virtualNics) {
+      struct ncclXmlNode* net = NULL;
+      NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
+      // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
+      // Only run this if the net doesn't exist locally - this may alter the XML state
+      if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, netInfo->getProperties, &props.vProps, &parent));
+    }
+
+    NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
 
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
