@@ -844,6 +844,9 @@ typedef void (*ncclRecoveryCallback_t)(int dev_idx);
 ncclResult_t ncclCommRegisterFaultCallback(ncclComm_t comm, ncclFaultCallback_t cb);
 ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallback_t cb);
 ncclResult_t ncclCommBanNic(int dev_idx);
+
+/* Reset InfiniBand driver static cache to allow dynamic hardware topology changes */
+NCCL_API void nccl_ft_reset_ib_cache(void);
 /* ------------------------------ */
 
 

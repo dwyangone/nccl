@@ -510,3 +510,22 @@ ncclResult_t ncclIbFinalize(void* ctx) {
   NCCLCHECK(ncclIbPortRecoveryThreadStop());
   return ncclIbFinalizeDevices();
 }
+
+
+/* ========================================================================= */
+/* --- [NCCL-FT: IB 快取熱重置 API] --- */
+/* ========================================================================= */
+extern int ncclNIbDevs;
+extern int ncclNMergedIbDevs;
+
+NCCL_API void nccl_ft_reset_ib_cache() {
+    // 取得 IB 模組的 Mutex 鎖，確保線程安全
+    std::lock_guard<std::mutex> lock(ncclIbMutex);
+    
+    // 1. 重置參考計數器，讓下一次呼叫能通過 if (netRefCount++) 的檢查
+    netRefCount = 0;
+    
+    // 2. 將快取的網卡數量設回初始值 -1，強迫重新掃描 PCI 裝置
+    ncclNIbDevs = -1;
+    ncclNMergedIbDevs = -1;
+}
