@@ -846,7 +846,7 @@ ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallb
 ncclResult_t ncclCommBanNic(int dev_idx);
 
 /* Reset InfiniBand driver static cache to allow dynamic hardware topology changes */
-NCCL_API void nccl_ft_reset_ib_cache(void);
+void nccl_ft_reset_ib_cache(void);
 /* ------------------------------ */
 
 

@@ -518,7 +518,8 @@ ncclResult_t ncclIbFinalize(void* ctx) {
 extern int ncclNIbDevs;
 extern int ncclNMergedIbDevs;
 
-NCCL_API void nccl_ft_reset_ib_cache() {
+NCCL_API(void, nccl_ft_reset_ib_cache);
+void nccl_ft_reset_ib_cache() {
     // 取得 IB 模組的 Mutex 鎖，確保線程安全
     std::lock_guard<std::mutex> lock(ncclIbMutex);
     
