@@ -139,6 +139,18 @@ ncclResult_t bootstrapNetInit() {
   return ncclSuccess;
 }
 
+/* [NCCL-FT] Reset the bootstrap network singleton so that the next
+ * ncclGetUniqueId() / bootstrapNetInit() call re-reads NCCL_SOCKET_IFNAME
+ * from the environment.  Call this after setenv("NCCL_SOCKET_IFNAME", ...)
+ * and before the recovery-round ncclGetUniqueId() so that the bootstrap
+ * socket binds to the intended interface (e.g. "lo") rather than the
+ * original IB interface that may now be banned/dead. */
+NCCL_API(void, nccl_ft_reset_bootstrap_net);
+void nccl_ft_reset_bootstrap_net() {
+  std::lock_guard<std::mutex> lock(bootstrapNetMutex);
+  bootstrapNetInitDone = 0;
+}
+
 /* Socket Interface Selection type */
 enum bootstrapInterface_t { findSubnetIf = -1, dontCareIf = -2 };
 

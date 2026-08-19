@@ -847,6 +847,8 @@ ncclResult_t ncclCommBanNic(int dev_idx);
 
 /* Reset InfiniBand driver static cache to allow dynamic hardware topology changes */
 void nccl_ft_reset_ib_cache(void);
+/* Reset the bootstrap network singleton so setenv(NCCL_SOCKET_IFNAME) takes effect */
+void nccl_ft_reset_bootstrap_net(void);
 /* ------------------------------ */
 
 

@@ -1434,16 +1434,13 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
 
     /* ========================================================= */
     /* --- [NCCL-FT: 軟性物理遮蔽 (Soft-Ban)] --- */
+    // Zero out banned NICs so the path-finder assigns them zero bandwidth
+    // and avoids routing through them.
     if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
         WARN("NCCL-FT: 軟性物理遮蔽故障網卡 %d (將頻寬設為 0，阻斷路由)", n);
-        
-        // 🔥 核心修復：絕對不要改名，也不要 continue！
-        // 保留 XML 的實體結構以防 vNic 聚合與 UCX 驅動發生 Segmentation Fault。
-        // 透過將頻寬 (speed) 與連線數 (maxComms) 歸零，
-        // 讓 NCCL 路由演算法 (PathFinder) 在計算最短路徑時，自然拋棄這張網卡！
         props.speed = 0;
         props.maxComms = 0;
-        props.latency = 999999; // 加上極大延遲，確保絕對不會被 Graph 演算法選中
+        props.latency = 999999;
     }
     /* ========================================================= */
 
@@ -1796,6 +1793,27 @@ ncclResult_t ncclTopoGetLocalNetType(struct ncclTopoSystem* system, int type, in
   if (localNetCount==0) {
     WARN("Could not find any local path from gpu %d to net.", gpu);
     return ncclInternalError;
+  }
+
+  // [NCCL-FT: 方案二] Filter out banned NICs from the candidate list so that
+  // the modulo-based channel assignment never lands on a dead device.
+  // ncclTopoPopulateNics already zeros their bandwidth so the path-finder
+  // avoids them during graph search; this guard ensures the final per-channel
+  // net index also skips them.  Only filter when at least one unbanned NIC
+  // remains to avoid stranding the GPU with zero candidates.
+  if (nccl_ft_is_disabled() == 0) {
+    int filtered[NCCL_TOPO_MAX_NODES];
+    int filteredCount = 0;
+    for (int i = 0; i < localNetCount; i++) {
+      int net_dev = system->nodes[type].nodes[localNets[i]].net.dev;
+      if (!nccl_ft_is_nic_banned(net_dev)) {
+        filtered[filteredCount++] = localNets[i];
+      }
+    }
+    if (filteredCount > 0) {
+      for (int i = 0; i < filteredCount; i++) localNets[i] = filtered[i];
+      localNetCount = filteredCount;
+    }
   }
 
   int netsPerGpu = 0;
