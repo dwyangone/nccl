@@ -843,12 +843,26 @@ typedef void (*ncclRecoveryCallback_t)(int dev_idx);
 /* 在標頭檔中，只需使用標準的函數宣告 */
 ncclResult_t ncclCommRegisterFaultCallback(ncclComm_t comm, ncclFaultCallback_t cb);
 ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallback_t cb);
-ncclResult_t ncclCommBanNic(int dev_idx);
 
-/* Reset InfiniBand driver static cache to allow dynamic hardware topology changes */
+/* [NCCL-FT] Non-blocking IB cache reset. Defers ibv_close_device() to avoid
+ * blocking on the async-event thread. Must be followed by a call to
+ * nccl_ft_cleanup_stale_ib_contexts() once the new communicator is established. */
 void nccl_ft_reset_ib_cache(void);
-/* Reset the bootstrap network singleton so setenv(NCCL_SOCKET_IFNAME) takes effect */
+
+/* [NCCL-FT] Blocking deferred cleanup for IB contexts evicted by
+ * nccl_ft_reset_ib_cache(). Safe to call from a background thread after
+ * re-init completes.  Calls ibv_close_device() which also causes the
+ * detached async-event thread to exit. */
+void nccl_ft_cleanup_stale_ib_contexts(void);
+
+/* [NCCL-FT] Reset bootstrap network singleton so setenv(NCCL_SOCKET_IFNAME)
+ * takes effect on the next ncclGetUniqueId() call. */
 void nccl_ft_reset_bootstrap_net(void);
+
+/* [NCCL-FT] Reset socket-transport singleton so setenv(NCCL_SOCKET_IFNAME)
+ * takes effect on the next socket transport initialisation.  Frees pciPath
+ * strings allocated during the previous scan. */
+void nccl_ft_reset_net_socket(void);
 /* ------------------------------ */
 
 

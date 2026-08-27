@@ -1424,25 +1424,10 @@ out:
   return res;
 }
 
-extern int nccl_ft_is_disabled(); // 宣告外部函數
-extern int nccl_ft_is_nic_banned(int dev_idx);
-
 static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, struct ncclTopoNetInfo* netInfo, int virtualNics) {
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
-
-    /* ========================================================= */
-    /* --- [NCCL-FT: 軟性物理遮蔽 (Soft-Ban)] --- */
-    // Zero out banned NICs so the path-finder assigns them zero bandwidth
-    // and avoids routing through them.
-    if (nccl_ft_is_disabled() == 0 && nccl_ft_is_nic_banned(n)) {
-        WARN("NCCL-FT: 軟性物理遮蔽故障網卡 %d (將頻寬設為 0，阻斷路由)", n);
-        props.speed = 0;
-        props.maxComms = 0;
-        props.latency = 999999;
-    }
-    /* ========================================================= */
 
     struct ncclXmlNode* netNode = NULL;
     struct ncclXmlNode* parent = NULL;
@@ -1793,27 +1778,6 @@ ncclResult_t ncclTopoGetLocalNetType(struct ncclTopoSystem* system, int type, in
   if (localNetCount==0) {
     WARN("Could not find any local path from gpu %d to net.", gpu);
     return ncclInternalError;
-  }
-
-  // [NCCL-FT: 方案二] Filter out banned NICs from the candidate list so that
-  // the modulo-based channel assignment never lands on a dead device.
-  // ncclTopoPopulateNics already zeros their bandwidth so the path-finder
-  // avoids them during graph search; this guard ensures the final per-channel
-  // net index also skips them.  Only filter when at least one unbanned NIC
-  // remains to avoid stranding the GPU with zero candidates.
-  if (nccl_ft_is_disabled() == 0) {
-    int filtered[NCCL_TOPO_MAX_NODES];
-    int filteredCount = 0;
-    for (int i = 0; i < localNetCount; i++) {
-      int net_dev = system->nodes[type].nodes[localNets[i]].net.dev;
-      if (!nccl_ft_is_nic_banned(net_dev)) {
-        filtered[filteredCount++] = localNets[i];
-      }
-    }
-    if (filteredCount > 0) {
-      for (int i = 0; i < filteredCount; i++) localNets[i] = filtered[i];
-      localNetCount = filteredCount;
-    }
   }
 
   int netsPerGpu = 0;

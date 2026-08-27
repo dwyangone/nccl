@@ -774,6 +774,28 @@ ncclResult_t ncclNetSocketFinalize(void* ctx) {
   return ncclSuccess;
 }
 
+/* [NCCL-FT] nccl_ft_reset_net_socket()
+ *
+ * Resets the socket-transport singleton so the next ncclNetSocketInit() call
+ * re-reads NCCL_SOCKET_IFNAME from the environment.
+ *
+ * pciPath strings are heap-allocated by ncclNetSocketGetPciPath(); free them
+ * before clearing the slot to avoid leaking memory across FT rounds.
+ * netRefCount is reset to 0 so the early-return guard (netRefCount++) in
+ * ncclNetSocketInit() does not skip re-initialisation. */
+NCCL_API(void, nccl_ft_reset_net_socket);
+void nccl_ft_reset_net_socket() {
+  std::lock_guard<std::mutex> lock(ncclNetSocketMutex);
+  if (ncclNetIfs > 0) {
+    for (int i = 0; i < ncclNetIfs; i++) {
+      free(ncclNetSocketDevs[i].pciPath);
+      ncclNetSocketDevs[i].pciPath = nullptr;
+    }
+  }
+  ncclNetIfs  = -1;
+  netRefCount =  0;
+}
+
 ncclNet_t ncclNetSocket = {
   "Socket",
   ncclNetSocketInit,

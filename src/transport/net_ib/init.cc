@@ -513,20 +513,109 @@ ncclResult_t ncclIbFinalize(void* ctx) {
 
 
 /* ========================================================================= */
-/* --- [NCCL-FT: IB 快取熱重置 API] --- */
+/* --- [NCCL-FT: IB 快取熱重置 API (方案 B: 延遲清理)] --- */
 /* ========================================================================= */
 extern int ncclNIbDevs;
 extern int ncclNMergedIbDevs;
 
+/* Each stale entry holds the resources of one physical IB device that was
+ * evicted by nccl_ft_reset_ib_cache().  The actual ibv_close_device() call
+ * is deferred to nccl_ft_cleanup_stale_ib_contexts() so that the hot path
+ * never blocks on libibverbs internal event-refcount drain. */
+struct ncclIbStaleCtx {
+    ibv_context*     context;
+    char*            pciPath;   /* heap-allocated; may be NULL for data-direct devs */
+    struct ncclIbMrCache mrCache;
+    char             devName[MAXNAMESIZE];
+};
+
+static std::vector<ncclIbStaleCtx> ncclIbStaleCtxs;
+static std::mutex                  ncclIbStaleMutex;
+
+/* nccl_ft_reset_ib_cache()
+ *
+ * Fast, non-blocking reset called on the FT hot path.
+ *
+ * What it does:
+ *   1. Moves every live ncclIbDevs[d].context into the stale list so it can be
+ *      cleaned up later without blocking the re-init path.
+ *   2. Clears ncclIbDevs[d].{context, pciPath, mrCache} so the slot is safe to
+ *      reuse.  The async-event thread still holds a pointer to the original
+ *      ncclIbDev struct in the global array; clearing context/pciPath there is
+ *      safe because the thread only dereferences dev->context and dev->devName /
+ *      dev->portNum for logging, and ncclIbDevFatalError writes to dev->stats
+ *      -- none of these fields are zeroed here.
+ *   3. Resets netRefCount = 0 so the next ncclIbInit() re-enters the scan path.
+ *   4. Sets ncclNIbDevs = -1 to trigger re-scan, ncclNMergedIbDevs = 0 (not -1)
+ *      so ncclIbDevices() returns 0 during the window before re-scan completes.
+ */
 NCCL_API(void, nccl_ft_reset_ib_cache);
 void nccl_ft_reset_ib_cache() {
-    // 取得 IB 模組的 Mutex 鎖，確保線程安全
-    std::lock_guard<std::mutex> lock(ncclIbMutex);
-    
-    // 1. 重置參考計數器，讓下一次呼叫能通過 if (netRefCount++) 的檢查
+    std::lock_guard<std::mutex> ibLock(ncclIbMutex);
+    {
+        std::lock_guard<std::mutex> staleLock(ncclIbStaleMutex);
+        for (int d = 0; d < ncclNIbDevs; d++) {
+            struct ncclIbStaleCtx s = {};
+            s.context = ncclIbDevs[d].context;
+            s.pciPath = ncclIbDevs[d].pciPath;
+            s.mrCache = ncclIbDevs[d].mrCache;
+            strncpy(s.devName, ncclIbDevs[d].devName, MAXNAMESIZE - 1);
+
+            /* Detach resources from the live slot so the next ncclIbInitDevices()
+             * does not double-free and so the slot is blank for the new device. */
+            ncclIbDevs[d].context        = nullptr;
+            ncclIbDevs[d].pciPath        = nullptr;
+            ncclIbDevs[d].mrCache.slots  = nullptr;
+            ncclIbDevs[d].mrCache.capacity   = 0;
+            ncclIbDevs[d].mrCache.population = 0;
+
+            ncclIbStaleCtxs.push_back(s);
+        }
+    }
+
+    /* Allow the next ncclIbInit() call to re-enter the device-scan block. */
     netRefCount = 0;
-    
-    // 2. 將快取的網卡數量設回初始值 -1，強迫重新掃描 PCI 裝置
-    ncclNIbDevs = -1;
-    ncclNMergedIbDevs = -1;
+
+    /* -1 triggers the inner if (ncclNIbDevs == -1) re-scan in ncclIbInitDevices().
+     * ncclNMergedIbDevs = 0 (not -1): ncclIbDevices() returns 0 in the window
+     * between this reset and the next scan, which is the correct "no devices"
+     * signal rather than a nonsensical negative value. */
+    ncclNIbDevs       = -1;
+    ncclNMergedIbDevs =  0;
+
+    /* shownIbHcaEnv is a static local inside ncclIbInitDevices() -- we cannot
+     * reset it from here.  The side-effect is that NCCL_IB_HCA is logged only
+     * on the first scan.  This is cosmetic and intentionally left as-is. */
+}
+
+/* nccl_ft_cleanup_stale_ib_contexts()
+ *
+ * Deferred cleanup -- call this from a background thread after the FT re-init
+ * has already established the new communicator on the new NIC.
+ *
+ * Why ibv_close_device() is safe here but not on the FT hot path:
+ *   ibv_close_device() blocks only if the internal async-events-completed
+ *   counter is non-zero (i.e., an event was get()-ed but not yet ack()-ed).
+ *   NCCL's async-event thread always does get/ack in back-to-back calls, so
+ *   after the NIC goes down (PORT_ERR / DEVICE_FATAL is delivered, get()-ed,
+ *   and immediately ack()-ed) the counter is 0.  A delayed call therefore
+ *   does not block.
+ *
+ *   After ibv_close_device() closes the context's async_fd, the async-event
+ *   thread's next ibv_get_async_event() returns -1 and the thread exits its
+ *   while(1) loop -- no join is needed.
+ */
+NCCL_API(void, nccl_ft_cleanup_stale_ib_contexts);
+void nccl_ft_cleanup_stale_ib_contexts() {
+    std::lock_guard<std::mutex> staleLock(ncclIbStaleMutex);
+    for (auto& s : ncclIbStaleCtxs) {
+        free(s.mrCache.slots);
+        free(s.pciPath);
+        if (s.context) {
+            /* This drives the detached async-event thread to exit: closing the
+             * context's async_fd makes ibv_get_async_event() return -1. */
+            wrap_ibv_close_device(s.context);
+        }
+    }
+    ncclIbStaleCtxs.clear();
 }

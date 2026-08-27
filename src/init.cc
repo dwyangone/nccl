@@ -3396,22 +3396,4 @@ ncclResult_t ncclCommRegisterRecoveryCallback(ncclComm_t comm, ncclRecoveryCallb
 }
 
 
-static uint64_t g_nccl_ft_banned_nics_mask = 0;
-NCCL_API(ncclResult_t, ncclCommBanNic, int dev_idx);
-ncclResult_t ncclCommBanNic(int dev_idx) {
-    g_nccl_ft_banned_nics_mask |= (1ULL << dev_idx);
-    return ncclSuccess;
-}
-/* [NCCL-FT] Reset the ban mask. Call this at the start of each
- * ncclCommInitRankConfig to prevent ban state from leaking across
- * training runs within the same process. */
-NCCL_API(ncclResult_t, ncclCommBanNicReset);
-ncclResult_t ncclCommBanNicReset() {
-    g_nccl_ft_banned_nics_mask = 0;
-    return ncclSuccess;
-}
-
-int nccl_ft_is_nic_banned(int dev_idx) {
-    return (g_nccl_ft_banned_nics_mask & (1ULL << dev_idx)) ? 1 : 0;
-}
 /* ========================================================================= */
